@@ -4,10 +4,12 @@
   "description": "Веб-интерфейс задач и напоминаний с уведомлениями в Telegram через OpenClaw",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "bot": "node telegram-bot.js"
   },
   "dependencies": {
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.67.0"
   },
   "engines": {
     "node": ">=18"
