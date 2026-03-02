@@ -20,7 +20,8 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 
-try { require('dotenv').config(); } catch (_) {}
+// Берём переменные из .env, принудительно перекрывая то, что может прийти от pm2
+try { require('dotenv').config({ override: true }); } catch (_) {}
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TASKS_API_URL = process.env.TASKS_API_URL || 'http://localhost:3080/api/tasks';
@@ -91,11 +92,13 @@ function filterTasksForChat(tasks, chatId) {
 
 // /start и /help
 const HELP_TEXT =
-  'Привет! Я ассистент по задачам.\n\n' +
+  'Привет! Я бот-напоминалка.\n\n' +
   'Команды:\n' +
-  '/add Текст задачи — создать задачу на ближайший час (напомню за 15 минут)\n' +
+  '/add ДД.MM.ГГГГ ЧЧ:ММ текст — создать задачу на указанную дату/время (напомню за 15 минут)\n' +
   '/list — показать список ближайших задач\n' +
-  '/delete N — удалить задачу под номером N из списка /list\n';
+  '/delete N — удалить задачу под номером N из списка /list\n\n' +
+  'Пример:\n' +
+  '/add 25.03.2026 10:00 созвон с клиентом';
 
 bot.onText(/^\/start$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -108,15 +111,17 @@ bot.onText(/^\/help$/, async (msg) => {
   await bot.sendMessage(chatId, HELP_TEXT);
 });
 
-// /add Текст задачи
+// /add ДД.MM.ГГГГ ЧЧ:ММ текст  ИЛИ  /add текст
 bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   const chatId = msg.chat.id;
   const text = (match[1] || '').trim();
   if (!text) {
     await bot.sendMessage(
       chatId,
-      'Использование:\n/add Текст задачи\n\n' +
-        'Пример:\n/add созвон с клиентом'
+      'Использование:\n' +
+        '/add ДД.MM.ГГГГ ЧЧ:ММ текст\n\n' +
+        'Пример:\n' +
+        '/add 25.03.2026 10:00 созвон с клиентом'
     );
     return;
   }
@@ -124,11 +129,38 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   try {
     const allTasks = await loadTasks();
     const now = new Date();
-    const eventTime = new Date(now.getTime() + 60 * 60 * 1000); // через 1 час
+
+    let title = text;
+    let eventTime;
+
+    // Пытаемся разобрать формат: 25.03.2026 10:00 текст
+    const m = text.match(
+      /^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})\s+(.+)$/
+    );
+    if (m) {
+      const [_, dd, mm, yyyy, hh, min, rest] = m;
+      const year = Number(yyyy);
+      const month = Number(mm) - 1;
+      const day = Number(dd);
+      const hour = Number(hh);
+      const minute = Number(min);
+      const dt = new Date(year, month, day, hour, minute);
+      if (Number.isNaN(dt.getTime())) {
+        throw new Error('Не удалось разобрать дату/время. Проверь формат ДД.MM.ГГГГ ЧЧ:ММ.');
+      }
+      if (dt <= now) {
+        throw new Error('Дата/время уже в прошлом. Укажи время в будущем.');
+      }
+      eventTime = dt;
+      title = rest.trim();
+    } else {
+      // Старый формат: /add текст — ставим через час от текущего времени
+      eventTime = new Date(now.getTime() + 60 * 60 * 1000);
+    }
 
     const task = {
       id: generateId(),
-      title: text,
+      title,
       dateTime: eventTime.toISOString(),
       remindBeforeMinutes: 15,
       repeat: 'once',
