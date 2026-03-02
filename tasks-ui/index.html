@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Задачи и напоминания</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f12;
+      --surface: #18181d;
+      --border: #2a2a32;
+      --text: #e8e6e3;
+      --text-muted: #8b8883;
+      --accent: #c9a227;
+      --accent-hover: #dbb42c;
+      --danger: #c94a4a;
+      --success: #4a9c6d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Manrope', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .layout {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 2rem 1rem 4rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0 0 0.25rem;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .form-row {
+      display: grid;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .form-row:last-child { margin-bottom: 0; }
+    .form-row-2 { grid-template-columns: 1fr 1fr; }
+    .form-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+    input, select {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      font-family: inherit;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.2);
+    }
+    input[type="datetime-local"] {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.25rem;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text-muted); }
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+    .btn-danger:hover { background: var(--danger); color: var(--bg); }
+    .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; }
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+    .task-list { margin-top: 2rem; }
+    .task-list h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--text-muted);
+    }
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 0.5rem;
+    }
+    .task-item.past { opacity: 0.65; }
+    .task-body { flex: 1; min-width: 0; }
+    .task-title { font-weight: 500; margin-bottom: 0.25rem; }
+    .task-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .task-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.35rem;
+    }
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      background: var(--border);
+      color: var(--text-muted);
+    }
+    .badge-repeat { background: rgba(201, 162, 39, 0.2); color: var(--accent); }
+    .badge-advance { background: rgba(74, 156, 109, 0.2); color: var(--success); }
+    .task-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+    .filter-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .filter-btn {
+      padding: 0.4rem 0.85rem;
+      font-size: 0.8rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .filter-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .filter-btn.active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+    .badge-to { background: rgba(100, 149, 237, 0.25); color: #7aa3e8; }
+    .empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
+    .export-import {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.6rem 1.2rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      z-index: 1000;
+      animation: toastIn 0.2s ease;
+    }
+    .toast.success { background: var(--success); color: #fff; }
+    .toast.error { background: var(--danger); color: #fff; }
+    .toast.offline { background: var(--border); color: var(--text); }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    .status-bar {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+    .status-bar.online { color: var(--success); }
+    .status-bar.offline { color: var(--danger); }
+    .hidden { display: none; }
+    #fileImport { display: none; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <h1>Задачи и напоминания</h1>
+    <p class="subtitle">Укажите дату, время и за сколько напомнить. Уведомления можно отправить в Telegram через OpenClaw.</p>
+
+    <div class="card">
+      <form id="taskForm">
+        <div class="form-row">
+          <label for="title">Задача</label>
+          <input type="text" id="title" placeholder="Например: Созвон с клиентом" required>
+        </div>
+        <div class="form-row form-row-2">
+          <div>
+            <label for="dateTime">Дата и время</label>
+            <input type="datetime-local" id="dateTime" required>
+          </div>
+          <div>
+            <label for="remindBefore">Напомнить заранее</label>
+            <select id="remindBefore">
+              <option value="0">В момент времени</option>
+              <option value="5">За 5 минут</option>
+              <option value="15" selected>За 15 минут</option>
+              <option value="30">За 30 минут</option>
+              <option value="60">За 1 час</option>
+              <option value="1440">За 1 день</option>
+              <option value="2880">За 2 дня</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div>
+            <label for="repeat">Повтор</label>
+            <select id="repeat">
+              <option value="once">Один раз</option>
+              <option value="daily">Каждый день</option>
+              <option value="weekly">Каждую неделю</option>
+              <option value="monthly">Каждый месяц</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div>
+            <label for="telegramTo">Кому напоминание (Telegram Chat ID)</label>
+            <input type="text" id="telegramTo" placeholder="Например: 123456789 или 111,222 (несколько через запятую)">
+          </div>
+        </div>
+        <div class="actions-row">
+          <button type="submit" class="btn btn-primary">Добавить задачу</button>
+          <button type="button" id="btnExport" class="btn btn-ghost">Экспорт JSON</button>
+          <button type="button" id="btnImport" class="btn btn-ghost">Импорт</button>
+          <input type="file" id="fileImport" accept=".json">
+        </div>
+      </form>
+    </div>
+
+    <div class="task-list">
+      <h2>Мои задачи</h2>
+      <div class="filter-row">
+        <button type="button" class="filter-btn active" data-filter="all">Все</button>
+        <button type="button" class="filter-btn" data-filter="future">Будущие</button>
+        <button type="button" class="filter-btn" data-filter="past">Прошедшие</button>
+      </div>
+      <div id="taskList"></div>
+      <div id="emptyState" class="empty-state hidden">Пока нет задач. Добавьте первую выше.</div>
+    </div>
+
+    <div class="export-import"></div>
+    <div id="statusBar" class="status-bar">Загрузка…</div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    const API = '/api/tasks';
+    const DEFAULT_TELEGRAM_KEY = 'reminder-default-telegram-to';
+    const FILTER_KEY = 'reminder-filter';
+    const remindBeforeLabels = {
+      0: 'в момент',
+      5: 'за 5 мин',
+      15: 'за 15 мин',
+      30: 'за 30 мин',
+      60: 'за 1 ч',
+      1440: 'за 1 день',
+      2880: 'за 2 дня'
+    };
+    const repeatLabels = { once: 'один раз', daily: 'каждый день', weekly: 'каждую неделю', monthly: 'каждый месяц' };
+
+    let tasks = [];
+    let filter = localStorage.getItem(FILTER_KEY) || 'all';
+
+    function showToast(message, type) {
+      const el = document.getElementById('toast');
+      el.textContent = message;
+      el.className = 'toast ' + (type || 'success');
+      el.classList.remove('hidden');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+    }
+
+    function setStatus(text, online) {
+      const el = document.getElementById('statusBar');
+      el.textContent = text;
+      el.className = 'status-bar ' + (online ? 'online' : 'offline');
+    }
+
+    async function loadTasks() {
+      try {
+        const res = await fetch(API);
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        setStatus('Сервер подключён. Напоминания отправляются в Telegram по расписанию.', true);
+        return tasks;
+      } catch (e) {
+        setStatus('Нет связи с сервером. Запустите: npm start в папке tasks-ui', false);
+        return [];
+      }
+    }
+
+    async function saveTasks() {
+      try {
+        const res = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tasks }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || res.statusText);
+        }
+        setStatus('Сервер подключён. Напоминания отправляются в Telegram по расписанию.', true);
+        showToast('Сохранено', 'success');
+        render();
+      } catch (e) {
+        setStatus('Ошибка сохранения: ' + e.message, false);
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    }
+
+    function generateId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2);
+    }
+
+    function formatDateTime(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function setDefaultDateTime() {
+      const el = document.getElementById('dateTime');
+      const now = new Date();
+      now.setMinutes(now.getMinutes() + 30);
+      now.setMinutes(Math.ceil(now.getMinutes() / 15) * 15);
+      el.value = now.toISOString().slice(0, 16);
+    }
+
+    document.getElementById('taskForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value.trim();
+      const dateTime = document.getElementById('dateTime').value;
+      const remindBefore = parseInt(document.getElementById('remindBefore').value, 10);
+      const repeat = document.getElementById('repeat').value;
+      if (!title || !dateTime) return;
+      const telegramTo = document.getElementById('telegramTo').value.trim() || null;
+      if (telegramTo) localStorage.setItem(DEFAULT_TELEGRAM_KEY, telegramTo);
+      tasks.push({
+        id: generateId(),
+        title,
+        dateTime: dateTime + ':00.000Z',
+        remindBeforeMinutes: remindBefore,
+        repeat,
+        telegramTo: telegramTo || undefined,
+        createdAt: new Date().toISOString()
+      });
+      saveTasks();
+      document.getElementById('title').value = '';
+      const defaultTo = localStorage.getItem(DEFAULT_TELEGRAM_KEY) || '';
+      document.getElementById('telegramTo').value = defaultTo;
+      setDefaultDateTime();
+    });
+
+    function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      saveTasks();
+    }
+
+    function render() {
+      const listEl = document.getElementById('taskList');
+      const emptyEl = document.getElementById('emptyState');
+      const now = new Date();
+      listEl.innerHTML = '';
+      const filtered = tasks.filter(task => {
+        const taskTime = new Date(task.dateTime);
+        const isPast = taskTime < now && task.repeat === 'once';
+        if (filter === 'future') return !isPast;
+        if (filter === 'past') return isPast;
+        return true;
+      });
+      if (filtered.length === 0) {
+        emptyEl.classList.remove('hidden');
+        emptyEl.textContent = tasks.length === 0
+          ? 'Пока нет задач. Добавьте первую выше.'
+          : (filter === 'future' ? 'Нет будущих задач.' : filter === 'past' ? 'Нет прошедших задач.' : 'Пока нет задач.');
+        return;
+      }
+      emptyEl.classList.add('hidden');
+      filtered.sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+      filtered.forEach(task => {
+        const past = new Date(task.dateTime) < now && task.repeat === 'once';
+        const div = document.createElement('div');
+        div.className = 'task-item' + (past ? ' past' : '');
+        const toBadge = task.telegramTo ? `<span class="badge badge-to">→ ${escapeHtml(task.telegramTo)}</span>` : '';
+        div.innerHTML = `
+          <div class="task-body">
+            <div class="task-title">${escapeHtml(task.title)}</div>
+            <div class="task-meta">${formatDateTime(task.dateTime)}</div>
+            <div class="task-badges">
+              <span class="badge badge-advance">${remindBeforeLabels[task.remindBeforeMinutes] ?? task.remindBeforeMinutes + ' мин'}</span>
+              <span class="badge badge-repeat">${repeatLabels[task.repeat]}</span>
+              ${toBadge}
+            </div>
+          </div>
+          <div class="task-actions">
+            <button type="button" class="btn btn-ghost btn-sm" data-delete="${task.id}" title="Удалить">✕</button>
+          </div>
+        `;
+        div.querySelector('[data-delete]').addEventListener('click', () => deleteTask(task.id));
+        listEl.appendChild(div);
+      });
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    document.getElementById('btnExport').addEventListener('click', () => {
+      const data = { version: 1, exportedAt: new Date().toISOString(), tasks };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'reminder-tasks.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
+    document.getElementById('fileImport').addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          const data = JSON.parse(r.result);
+          const imported = Array.isArray(data.tasks) ? data.tasks : (Array.isArray(data) ? data : []);
+          if (imported.length) {
+            tasks = tasks.concat(imported.map(t => ({ ...t, id: t.id || generateId() })));
+            saveTasks();
+          }
+        } catch (err) {
+          alert('Не удалось прочитать файл.');
+        }
+      };
+      r.readAsText(file);
+      e.target.value = '';
+    });
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        filter = btn.dataset.filter;
+        localStorage.setItem(FILTER_KEY, filter);
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        render();
+      });
+    });
+
+    const defaultTo = localStorage.getItem(DEFAULT_TELEGRAM_KEY) || '';
+    if (defaultTo) document.getElementById('telegramTo').value = defaultTo;
+    setDefaultDateTime();
+    loadTasks().then(() => render());
+  </script>
+</body>
+</html>
