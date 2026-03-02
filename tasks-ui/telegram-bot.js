@@ -20,8 +20,13 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 
-// Берём переменные из .env, принудительно перекрывая то, что может прийти от pm2
-try { require('dotenv').config({ override: true }); } catch (_) {}
+// Берём переменные именно из .env рядом со скриптом, перекрывая окружение pm2
+try {
+  require('dotenv').config({
+    path: path.join(__dirname, '.env'),
+    override: true,
+  });
+} catch (_) {}
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TASKS_API_URL = process.env.TASKS_API_URL || 'http://localhost:3080/api/tasks';
