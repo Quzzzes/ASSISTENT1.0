@@ -475,7 +475,12 @@ bot.on('message', async (msg) => {
       return;
     }
     if (pending === 'add_remind_custom') {
-      const minutes = Number(text.replace(',', '.').trim());
+      const normalized = text.replace(',', '.').trim();
+      if (!/^\d+(\.\d+)?$/.test(normalized)) {
+        await sendMainMenu(chatId, 'Введи число минут, например: 10');
+        return;
+      }
+      const minutes = Number(normalized);
       if (!Number.isFinite(minutes) || minutes < 0) {
         await sendMainMenu(chatId, 'Введи число минут, например: 10');
         return;
@@ -536,7 +541,12 @@ bot.on('message', async (msg) => {
     }
   } catch (err) {
     log('message handler error', err);
-    await sendMainMenu(chatId, 'Не получилось обработать сообщение. Попробуй ещё раз.');
+    await sendMainMenu(
+      chatId,
+      'Не получилось обработать сообщение.\n' +
+      `Причина: ${String(err?.message || err)}\n` +
+      'Попробуй ещё раз или нажми ↩️ Отмена.'
+    );
   }
 });
 
