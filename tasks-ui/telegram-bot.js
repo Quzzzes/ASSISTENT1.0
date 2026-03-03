@@ -46,6 +46,17 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const pendingAction = new Map();
+
+const MAIN_KEYBOARD = {
+  keyboard: [
+    ['➕ Добавить', '📋 Список'],
+    ['❌ Удалить', '🕒 Время'],
+    ['ℹ️ Помощь'],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+};
 
 function log(...args) {
   console.log('[bot]', ...args);
@@ -69,6 +80,14 @@ function formatDateTime(iso) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function withKeyboard() {
+  return { reply_markup: MAIN_KEYBOARD };
+}
+
+function sendMainMenu(chatId, text) {
+  return bot.sendMessage(chatId, text, withKeyboard());
 }
 
 async function loadTasks() {
@@ -115,27 +134,140 @@ const HELP_TEXT =
   '/list — показать список ближайших задач\n' +
   '/delete N — удалить задачу под номером N из списка /list\n\n' +
   '/time — показать текущее время бота (чтобы сверить часовой пояс)\n\n' +
+  'Также можно пользоваться кнопками внизу чата.\n\n' +
   'Примеры:\n' +
   '/add 25.03.2026 10:00 созвон с клиентом\n' +
   '/add 19.30 отправить отчёт\n' +
   '/add 09:15 проверить почту\n' +
   '/add 20:35 тест уведомления /m15';
 
+async function createTaskFromInput(chatId, rawText) {
+  const text = (rawText || '').trim();
+  if (!text) {
+    await sendMainMenu(
+      chatId,
+      'Использование:\n' +
+        '/add ДД.MM.ГГГГ ЧЧ:ММ текст\n\n' +
+        'Также можно:\n' +
+        '/add ЧЧ:ММ текст\n' +
+        '/add текст\n' +
+        '/add ... /m15 (напомнить за 15 минут)\n\n' +
+        'Пример:\n' +
+        '/add 25.03.2026 10:00 созвон с клиентом'
+    );
+    return;
+  }
+  const allTasks = await loadTasks();
+  const now = new Date();
+  let remindBeforeMinutes = DEFAULT_REMIND_BEFORE_MINUTES;
+  let preparedText = text;
+
+  // Опциональный суффикс: /m15 или /r15
+  const remindMatch = preparedText.match(/(?:^|\s)\/[mr](\d{1,4})\s*$/i);
+  if (remindMatch) {
+    remindBeforeMinutes = Math.max(0, Number(remindMatch[1]));
+    preparedText = preparedText.replace(/(?:^|\s)\/[mr]\d{1,4}\s*$/i, '').trim();
+    if (!preparedText) {
+      throw new Error('После /mN должен быть текст задачи. Пример: /add 20:35 созвон /m15');
+    }
+  }
+  const { eventTime, title } = parseAddInput(preparedText, now);
+
+  const task = {
+    id: generateId(),
+    title,
+    dateTime: eventTime.toISOString(),
+    remindBeforeMinutes,
+    repeat: 'once',
+    telegramTo: String(chatId),
+    createdAt: now.toISOString(),
+  };
+
+  allTasks.push(task);
+  await saveTasks(allTasks);
+
+  await sendMainMenu(
+    chatId,
+    'Задача создана ✅\n' +
+      `Когда: ${formatDateTime(task.dateTime)}\n` +
+      `Напомню за ${task.remindBeforeMinutes} минут до события.\n` +
+      'Проверить список: /list'
+  );
+}
+
+async function sendTaskList(chatId) {
+  const allTasks = await loadTasks();
+  const myTasks = filterTasksForChat(allTasks, chatId);
+  if (!myTasks.length) {
+    await sendMainMenu(chatId, 'У тебя пока нет задач.');
+    return;
+  }
+  const now = new Date();
+  const sorted = [...myTasks].sort(
+    (a, b) => new Date(a.dateTime) - new Date(b.dateTime)
+  );
+  const lines = sorted.slice(0, 20).map((t, idx) => {
+    const num = idx + 1;
+    const when = formatDateTime(t.dateTime);
+    const past = new Date(t.dateTime) < now && t.repeat === 'once';
+    const flag = past ? ' (прошло)' : '';
+    return `${num}) ${when} — ${t.title}${flag}`;
+  });
+  await sendMainMenu(
+    chatId,
+    'Твои задачи:\n\n' +
+      lines.join('\n') +
+      '\n\nЧтобы удалить: /delete N (номер из списка).'
+  );
+}
+
+async function deleteTaskByNumber(chatId, n) {
+  if (!Number.isFinite(n) || n <= 0) {
+    await sendMainMenu(chatId, 'Номер задачи должен быть положительным числом.');
+    return;
+  }
+  const allTasks = await loadTasks();
+  const myTasks = filterTasksForChat(allTasks, chatId);
+  if (!myTasks.length) {
+    await sendMainMenu(chatId, 'У тебя нет задач для удаления.');
+    return;
+  }
+  const sorted = [...myTasks].sort(
+    (a, b) => new Date(a.dateTime) - new Date(b.dateTime)
+  );
+  if (n > sorted.length) {
+    await sendMainMenu(chatId, `Нет задачи под номером ${n}. Введи /list, чтобы посмотреть номера.`);
+    return;
+  }
+  const target = sorted[n - 1];
+  const remaining = allTasks.filter((t) => t.id !== target.id);
+  await saveTasks(remaining);
+  await sendMainMenu(
+    chatId,
+    `Удалил задачу №${n}:\n${formatDateTime(target.dateTime)} — ${target.title}`
+  );
+}
+
 bot.onText(/^\/start$/, async (msg) => {
   const chatId = msg.chat.id;
   log('start from', chatId);
-  await bot.sendMessage(chatId, HELP_TEXT);
+  await sendMainMenu(chatId, HELP_TEXT);
 });
 
 bot.onText(/^\/help$/, async (msg) => {
   const chatId = msg.chat.id;
-  await bot.sendMessage(chatId, HELP_TEXT);
+  await sendMainMenu(chatId, HELP_TEXT);
+});
+
+bot.onText(/^\/menu$/, async (msg) => {
+  const chatId = msg.chat.id;
+  await sendMainMenu(chatId, HELP_TEXT);
 });
 
 bot.onText(/^\/time$/, async (msg) => {
   const chatId = msg.chat.id;
   const now = new Date();
-  await bot.sendMessage(
+  await sendMainMenu(
     chatId,
     `🕒 Время бота: ${now.toLocaleString('ru-RU', { timeZone: BOT_TZ })}\nTZ: ${BOT_TZ}`
   );
@@ -202,61 +334,12 @@ function parseAddInput(input, now) {
 // /add (гибкий формат)
 bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   const chatId = msg.chat.id;
-  let text = (match[1] || '').trim();
-  if (!text) {
-    await bot.sendMessage(
-      chatId,
-      'Использование:\n' +
-        '/add ДД.MM.ГГГГ ЧЧ:ММ текст\n\n' +
-        'Также можно:\n' +
-        '/add ЧЧ:ММ текст\n' +
-        '/add текст\n' +
-        '/add ... /m15 (напомнить за 15 минут)\n\n' +
-        'Пример:\n' +
-        '/add 25.03.2026 10:00 созвон с клиентом'
-    );
-    return;
-  }
-
+  const text = (match[1] || '').trim();
   try {
-    const allTasks = await loadTasks();
-    const now = new Date();
-    let remindBeforeMinutes = DEFAULT_REMIND_BEFORE_MINUTES;
-
-    // Опциональный суффикс: /m15 или /r15
-    const remindMatch = text.match(/(?:^|\s)\/[mr](\d{1,4})\s*$/i);
-    if (remindMatch) {
-      remindBeforeMinutes = Math.max(0, Number(remindMatch[1]));
-      text = text.replace(/(?:^|\s)\/[mr]\d{1,4}\s*$/i, '').trim();
-      if (!text) {
-        throw new Error('После /mN должен быть текст задачи. Пример: /add 20:35 созвон /m15');
-      }
-    }
-    const { eventTime, title } = parseAddInput(text, now);
-
-    const task = {
-      id: generateId(),
-      title,
-      dateTime: eventTime.toISOString(),
-      remindBeforeMinutes,
-      repeat: 'once',
-      telegramTo: String(chatId),
-      createdAt: now.toISOString(),
-    };
-
-    allTasks.push(task);
-    await saveTasks(allTasks);
-
-    await bot.sendMessage(
-      chatId,
-      'Задача создана ✅\n' +
-        `Когда: ${formatDateTime(task.dateTime)}\n` +
-        `Напомню за ${task.remindBeforeMinutes} минут до события.\n` +
-        'Проверить список: /list'
-    );
+    await createTaskFromInput(chatId, text);
   } catch (err) {
     log('add error', err);
-    await bot.sendMessage(
+    await sendMainMenu(
       chatId,
       'Не получилось сохранить задачу.\n' +
       String(err.message || err) +
@@ -269,32 +352,10 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
 bot.onText(/^\/list$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const allTasks = await loadTasks();
-    const myTasks = filterTasksForChat(allTasks, chatId);
-    if (!myTasks.length) {
-      await bot.sendMessage(chatId, 'У тебя пока нет задач.');
-      return;
-    }
-    const now = new Date();
-    const sorted = [...myTasks].sort(
-      (a, b) => new Date(a.dateTime) - new Date(b.dateTime)
-    );
-    const lines = sorted.slice(0, 20).map((t, idx) => {
-      const num = idx + 1;
-      const when = formatDateTime(t.dateTime);
-      const past = new Date(t.dateTime) < now && t.repeat === 'once';
-      const flag = past ? ' (прошло)' : '';
-      return `${num}) ${when} — ${t.title}${flag}`;
-    });
-    await bot.sendMessage(
-      chatId,
-      'Твои задачи:\n\n' +
-        lines.join('\n') +
-        '\n\nЧтобы удалить: /delete N (номер из списка).'
-    );
+    await sendTaskList(chatId);
   } catch (err) {
     log('list error', err);
-    await bot.sendMessage(
+    await sendMainMenu(
       chatId,
       'Не получилось получить список задач. Попробуйте позже.'
     );
@@ -305,41 +366,73 @@ bot.onText(/^\/list$/, async (msg) => {
 bot.onText(/^\/delete\s+(\d+)$/i, async (msg, match) => {
   const chatId = msg.chat.id;
   const n = parseInt(match[1], 10);
-  if (!Number.isFinite(n) || n <= 0) {
-    await bot.sendMessage(chatId, 'Номер задачи должен быть положительным числом.');
-    return;
-  }
-
   try {
-    const allTasks = await loadTasks();
-    const myTasks = filterTasksForChat(allTasks, chatId);
-    if (!myTasks.length) {
-      await bot.sendMessage(chatId, 'У тебя нет задач для удаления.');
-      return;
-    }
-    const sorted = [...myTasks].sort(
-      (a, b) => new Date(a.dateTime) - new Date(b.dateTime)
-    );
-    if (n > sorted.length) {
-      await bot.sendMessage(
-        chatId,
-        `Нет задачи под номером ${n}. Введи /list, чтобы посмотреть номера.`
-      );
-      return;
-    }
-    const target = sorted[n - 1];
-    const remaining = allTasks.filter((t) => t.id !== target.id);
-    await saveTasks(remaining);
-    await bot.sendMessage(
-      chatId,
-      `Удалил задачу №${n}:\n${formatDateTime(target.dateTime)} — ${target.title}`
-    );
+    await deleteTaskByNumber(chatId, n);
   } catch (err) {
     log('delete error', err);
-    await bot.sendMessage(
+    await sendMainMenu(
       chatId,
       'Не получилось удалить задачу. Попробуйте позже.'
     );
+  }
+});
+
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = (msg.text || '').trim();
+  if (!text) return;
+  if (text.startsWith('/')) return;
+
+  try {
+    const pending = pendingAction.get(chatId);
+    if (pending === 'add') {
+      pendingAction.delete(chatId);
+      await createTaskFromInput(chatId, text);
+      return;
+    }
+    if (pending === 'delete') {
+      pendingAction.delete(chatId);
+      const n = Number(text.replace(/[^\d]/g, ''));
+      await deleteTaskByNumber(chatId, n);
+      return;
+    }
+
+    if (text === '➕ Добавить') {
+      pendingAction.set(chatId, 'add');
+      await sendMainMenu(
+        chatId,
+        'Отправь задачу одним сообщением.\n\n' +
+          'Примеры:\n' +
+          '25.03.2026 10:00 созвон /m15\n' +
+          '19:30 отправить отчёт /m5\n' +
+          'проверить почту'
+      );
+      return;
+    }
+    if (text === '📋 Список') {
+      await sendTaskList(chatId);
+      return;
+    }
+    if (text === '❌ Удалить') {
+      pendingAction.set(chatId, 'delete');
+      await sendMainMenu(chatId, 'Напиши номер задачи для удаления (посмотри номера через /list).');
+      return;
+    }
+    if (text === '🕒 Время') {
+      const now = new Date();
+      await sendMainMenu(
+        chatId,
+        `🕒 Время бота: ${now.toLocaleString('ru-RU', { timeZone: BOT_TZ })}\nTZ: ${BOT_TZ}`
+      );
+      return;
+    }
+    if (text === 'ℹ️ Помощь') {
+      await sendMainMenu(chatId, HELP_TEXT);
+      return;
+    }
+  } catch (err) {
+    log('message handler error', err);
+    await sendMainMenu(chatId, 'Не получилось обработать сообщение. Попробуй ещё раз.');
   }
 });
 
