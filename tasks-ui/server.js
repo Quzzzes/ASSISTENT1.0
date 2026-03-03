@@ -15,6 +15,7 @@ try { require('dotenv').config(); } catch (_) {}
 const PORT = parseInt(process.env.PORT || '3080', 10);
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789';
 const HOOK_TOKEN = process.env.OPENCLAW_HOOK_TOKEN || '';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_TO = (process.env.OPENCLAW_TELEGRAM_TO || '').split(',').map(s => s.trim()).filter(Boolean);
 const CHECK_INTERVAL_MS = parseInt(process.env.CHECK_INTERVAL_MS || '60000', 10);
 
@@ -132,15 +133,42 @@ function advanceNextReminder(task, state) {
 
 async function sendNotification(task) {
   const message = `🔔 Напоминание: ${task.title}\nВремя: ${new Date(task.dateTime).toLocaleString('ru-RU')}`;
+  const toList = (task.telegramTo && String(task.telegramTo).trim())
+    ? String(task.telegramTo).split(',').map(s => s.trim()).filter(Boolean)
+    : TELEGRAM_TO;
+  const targets = toList.length ? toList : ['last'];
+
+  // Предпочтительный путь: прямой вызов Telegram Bot API.
+  // Это делает систему независимой от OpenClaw webhook и проще для сервера.
+  if (TELEGRAM_BOT_TOKEN && targets.length && targets[0] !== 'last') {
+    for (const to of targets) {
+      try {
+        const tgUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const res = await fetch(tgUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: String(to).trim(),
+            text: message,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          console.error('[Reminder] Telegram API error', res.status, body);
+        }
+      } catch (err) {
+        console.error('[Reminder] Telegram send failed:', err.message);
+      }
+    }
+    return;
+  }
+
+  // Fallback: отправка через OpenClaw hooks (если настроено).
   const url = `${GATEWAY_URL.replace(/\/$/, '')}/hooks/agent`;
   const headers = {
     'Content-Type': 'application/json',
     ...(HOOK_TOKEN && { Authorization: `Bearer ${HOOK_TOKEN}` }),
   };
-  const toList = (task.telegramTo && String(task.telegramTo).trim())
-    ? String(task.telegramTo).split(',').map(s => s.trim()).filter(Boolean)
-    : TELEGRAM_TO;
-  const targets = toList.length ? toList : ['last'];
 
   for (const to of targets) {
     try {
@@ -250,6 +278,11 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log('Сервер: http://localhost:' + PORT);
   console.log('Данные: ' + TASKS_FILE);
+  if (TELEGRAM_BOT_TOKEN) {
+    console.log('Режим уведомлений: Telegram Bot API');
+  } else {
+    console.log('Режим уведомлений: OpenClaw webhook fallback');
+  }
   if (!HOOK_TOKEN && TELEGRAM_TO.length) console.warn('OPENCLAW_HOOK_TOKEN не задан — уведомления в Telegram не будут отправляться.');
   if (!TELEGRAM_TO.length && HOOK_TOKEN) console.warn('OPENCLAW_TELEGRAM_TO не задан — укажите Chat ID.');
 });
