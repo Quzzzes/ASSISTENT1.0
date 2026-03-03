@@ -83,12 +83,15 @@ function getNextReminderAt(task, state) {
   const base = new Date(task.dateTime);
   const remindAt = addMinutes(base, -(task.remindBeforeMinutes || 0));
   const now = new Date();
+  const doneKey = `done:${task.id}`;
+  if (state[doneKey]) return null;
   const key = `next:${task.id}`;
   const stored = state[key];
   if (stored) {
     const next = new Date(stored);
     if (next > now) return next;
   }
+  if (task.repeat === 'once') return remindAt;
   if (remindAt > now) return remindAt;
   switch (task.repeat) {
     case 'daily': {
@@ -115,6 +118,7 @@ function advanceNextReminder(task, state) {
   const base = new Date(task.dateTime);
   const remindAt = addMinutes(base, -(task.remindBeforeMinutes || 0));
   const key = `next:${task.id}`;
+  const doneKey = `done:${task.id}`;
   const current = state[key] ? new Date(state[key]) : remindAt;
   switch (task.repeat) {
     case 'daily':
@@ -127,6 +131,7 @@ function advanceNextReminder(task, state) {
       state[key] = addMonths(current, 1).toISOString();
       break;
     default:
+      state[doneKey] = true;
       delete state[key];
   }
 }
@@ -152,9 +157,11 @@ async function sendNotification(task) {
             text: message,
           }),
         });
-        if (!res.ok) {
-          const body = await res.text().catch(() => '');
-          console.error('[Reminder] Telegram API error', res.status, body);
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body || body.ok !== true) {
+          console.error('[Reminder] Telegram API error', res.status, body || '');
+        } else {
+          console.log(`[Reminder] sent to chat ${String(to).trim()} task="${task.title}"`);
         }
       } catch (err) {
         console.error('[Reminder] Telegram send failed:', err.message);
