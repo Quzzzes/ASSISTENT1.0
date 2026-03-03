@@ -34,6 +34,9 @@ try {
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TASKS_API_URL = process.env.TASKS_API_URL || 'http://localhost:3080/api/tasks';
+const DEFAULT_REMIND_BEFORE_MINUTES = Number.isFinite(Number(process.env.DEFAULT_REMIND_BEFORE_MINUTES))
+  ? Math.max(0, Number(process.env.DEFAULT_REMIND_BEFORE_MINUTES))
+  : 0;
 
 if (!BOT_TOKEN) {
   // Без токена нет смысла продолжать.
@@ -106,12 +109,14 @@ const HELP_TEXT =
   '/add ДД.MM.ГГГГ ЧЧ:ММ текст — задача на указанную дату и время\n' +
   '/add ЧЧ:ММ текст — задача на сегодня/завтра в указанное время\n' +
   '/add текст — задача через 1 час\n' +
+  '/add ... /m15 — напомнить за 15 минут до события (по умолчанию /m0)\n' +
   '/list — показать список ближайших задач\n' +
   '/delete N — удалить задачу под номером N из списка /list\n\n' +
   'Примеры:\n' +
   '/add 25.03.2026 10:00 созвон с клиентом\n' +
   '/add 19.30 отправить отчёт\n' +
-  '/add 09:15 проверить почту';
+  '/add 09:15 проверить почту\n' +
+  '/add 20:35 тест уведомления /m15';
 
 bot.onText(/^\/start$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -185,7 +190,7 @@ function parseAddInput(input, now) {
 // /add (гибкий формат)
 bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   const chatId = msg.chat.id;
-  const text = (match[1] || '').trim();
+  let text = (match[1] || '').trim();
   if (!text) {
     await bot.sendMessage(
       chatId,
@@ -193,7 +198,8 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
         '/add ДД.MM.ГГГГ ЧЧ:ММ текст\n\n' +
         'Также можно:\n' +
         '/add ЧЧ:ММ текст\n' +
-        '/add текст\n\n' +
+        '/add текст\n' +
+        '/add ... /m15 (напомнить за 15 минут)\n\n' +
         'Пример:\n' +
         '/add 25.03.2026 10:00 созвон с клиентом'
     );
@@ -203,13 +209,24 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   try {
     const allTasks = await loadTasks();
     const now = new Date();
+    let remindBeforeMinutes = DEFAULT_REMIND_BEFORE_MINUTES;
+
+    // Опциональный суффикс: /m15 или /r15
+    const remindMatch = text.match(/(?:^|\s)\/[mr](\d{1,4})\s*$/i);
+    if (remindMatch) {
+      remindBeforeMinutes = Math.max(0, Number(remindMatch[1]));
+      text = text.replace(/(?:^|\s)\/[mr]\d{1,4}\s*$/i, '').trim();
+      if (!text) {
+        throw new Error('После /mN должен быть текст задачи. Пример: /add 20:35 созвон /m15');
+      }
+    }
     const { eventTime, title } = parseAddInput(text, now);
 
     const task = {
       id: generateId(),
       title,
       dateTime: eventTime.toISOString(),
-      remindBeforeMinutes: 15,
+      remindBeforeMinutes,
       repeat: 'once',
       telegramTo: String(chatId),
       createdAt: now.toISOString(),
@@ -222,7 +239,7 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
       chatId,
       'Задача создана ✅\n' +
         `Когда: ${formatDateTime(task.dateTime)}\n` +
-        'Напомню за 15 минут до события.\n' +
+        `Напомню за ${task.remindBeforeMinutes} минут до события.\n` +
         'Проверить список: /list'
     );
   } catch (err) {
