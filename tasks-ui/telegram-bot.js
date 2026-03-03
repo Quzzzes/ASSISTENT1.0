@@ -47,12 +47,13 @@ if (!BOT_TOKEN) {
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const pendingAction = new Map();
+const pendingDraft = new Map();
 
 const MAIN_KEYBOARD = {
   keyboard: [
     ['➕ Добавить', '📋 Список'],
     ['❌ Удалить', '🕒 Время'],
-    ['ℹ️ Помощь'],
+    ['↩️ Отмена', 'ℹ️ Помощь'],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -127,10 +128,10 @@ function filterTasksForChat(tasks, chatId) {
 const HELP_TEXT =
   'Привет! Я бот-напоминалка.\n\n' +
   'Команды:\n' +
-  '/add ДД.MM.ГГГГ ЧЧ:ММ текст — задача на указанную дату и время\n' +
-  '/add ЧЧ:ММ текст — задача на сегодня/завтра в указанное время\n' +
-  '/add текст — задача через 1 час\n' +
-  '/add ... /m15 — напомнить за 15 минут до события (по умолчанию /m0)\n' +
+  '/add ДД.MM.ГГГГ ЧЧ:ММ текст — (шаг 1) дата/время и текст, потом выбор минут кнопками\n' +
+  '/add ЧЧ:ММ текст — на сегодня/завтра, затем выбор минут\n' +
+  '/add текст — через 1 час, затем выбор минут\n' +
+  '/add ... /m15 — быстрый режим: сразу сохранить с указанными минутами\n' +
   '/list — показать список ближайших задач\n' +
   '/delete N — удалить задачу под номером N из списка /list\n\n' +
   '/time — показать текущее время бота (чтобы сверить часовой пояс)\n\n' +
@@ -140,6 +141,60 @@ const HELP_TEXT =
   '/add 19.30 отправить отчёт\n' +
   '/add 09:15 проверить почту\n' +
   '/add 20:35 тест уведомления /m15';
+
+function remindInlineKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '5 мин', callback_data: 'remind:5' },
+        { text: '15 мин', callback_data: 'remind:15' },
+      ],
+      [
+        { text: '30 мин', callback_data: 'remind:30' },
+        { text: '60 мин', callback_data: 'remind:60' },
+      ],
+      [
+        { text: 'Своё число', callback_data: 'remind:custom' },
+        { text: 'Отмена', callback_data: 'remind:cancel' },
+      ],
+    ],
+  };
+}
+
+async function saveTask(chatId, title, eventTime, remindBeforeMinutes) {
+  const now = new Date();
+  const task = {
+    id: generateId(),
+    title,
+    dateTime: eventTime.toISOString(),
+    remindBeforeMinutes,
+    repeat: 'once',
+    telegramTo: String(chatId),
+    createdAt: now.toISOString(),
+  };
+  allTasks.push(task);
+  await saveTasks(allTasks);
+  return task;
+}
+
+async function finalizeDraft(chatId, remindBeforeMinutes) {
+  const draft = pendingDraft.get(chatId);
+  if (!draft) {
+    await sendMainMenu(chatId, 'Черновик задачи не найден. Нажми ➕ Добавить заново.');
+    return null;
+  }
+  const task = await saveTask(chatId, draft.title, draft.eventTime, remindBeforeMinutes);
+  pendingDraft.delete(chatId);
+  pendingAction.delete(chatId);
+  await sendMainMenu(
+    chatId,
+    'Задача создана ✅\n' +
+      `Когда: ${formatDateTime(task.dateTime)}\n` +
+      `Напомню за ${task.remindBeforeMinutes} минут до события.\n` +
+      'Проверить список: /list'
+  );
+  return task;
+}
 
 async function createTaskFromInput(chatId, rawText) {
   const text = (rawText || '').trim();
@@ -173,25 +228,26 @@ async function createTaskFromInput(chatId, rawText) {
   }
   const { eventTime, title } = parseAddInput(preparedText, now);
 
-  const task = {
-    id: generateId(),
-    title,
-    dateTime: eventTime.toISOString(),
-    remindBeforeMinutes,
-    repeat: 'once',
-    telegramTo: String(chatId),
-    createdAt: now.toISOString(),
-  };
+  // Быстрый one-shot режим через /mN сохраняем сразу.
+  if (remindMatch) {
+    const task = await saveTask(chatId, title, eventTime, remindBeforeMinutes);
+    await sendMainMenu(
+      chatId,
+      'Задача создана ✅\n' +
+        `Когда: ${formatDateTime(task.dateTime)}\n` +
+        `Напомню за ${task.remindBeforeMinutes} минут до события.\n` +
+        'Проверить список: /list'
+    );
+    return;
+  }
 
-  allTasks.push(task);
-  await saveTasks(allTasks);
-
-  await sendMainMenu(
+  // 2-шаговый режим: сначала черновик, затем выбор минут кнопками.
+  pendingDraft.set(chatId, { title, eventTime });
+  pendingAction.set(chatId, 'add_remind_select');
+  await bot.sendMessage(
     chatId,
-    'Задача создана ✅\n' +
-      `Когда: ${formatDateTime(task.dateTime)}\n` +
-      `Напомню за ${task.remindBeforeMinutes} минут до события.\n` +
-      'Проверить список: /list'
+    'Шаг 2/2: за сколько минут напомнить?',
+    { reply_markup: remindInlineKeyboard() }
   );
 }
 
@@ -418,6 +474,19 @@ bot.on('message', async (msg) => {
       await createTaskFromInput(chatId, text);
       return;
     }
+    if (pending === 'add_remind_custom') {
+      const minutes = Number(text.replace(',', '.').trim());
+      if (!Number.isFinite(minutes) || minutes < 0) {
+        await sendMainMenu(chatId, 'Введи число минут, например: 10');
+        return;
+      }
+      await finalizeDraft(chatId, Math.floor(minutes));
+      return;
+    }
+    if (pending === 'add_remind_select') {
+      await sendMainMenu(chatId, 'Выбери кнопку времени напоминания: 5/15/30/60 или "Своё число".');
+      return;
+    }
     if (pending === 'delete') {
       pendingAction.delete(chatId);
       const n = Number(text.replace(/[^\d]/g, ''));
@@ -427,12 +496,13 @@ bot.on('message', async (msg) => {
 
     if (text === '➕ Добавить') {
       pendingAction.set(chatId, 'add');
+      pendingDraft.delete(chatId);
       await sendMainMenu(
         chatId,
-        'Отправь задачу одним сообщением.\n\n' +
+        'Шаг 1/2: отправь задачу одним сообщением.\n\n' +
           'Примеры:\n' +
-          '25.03.2026 10:00 созвон /m15\n' +
-          '19:30 отправить отчёт /m5\n' +
+          '25.03.2026 10:00 экзамен\n' +
+          '19:30 отправить отчёт\n' +
           'проверить почту'
       );
       return;
@@ -458,6 +528,12 @@ bot.on('message', async (msg) => {
       await sendMainMenu(chatId, HELP_TEXT);
       return;
     }
+    if (text === '↩️ Отмена') {
+      pendingAction.delete(chatId);
+      pendingDraft.delete(chatId);
+      await sendMainMenu(chatId, 'Действие отменено.');
+      return;
+    }
   } catch (err) {
     log('message handler error', err);
     await sendMainMenu(chatId, 'Не получилось обработать сообщение. Попробуй ещё раз.');
@@ -473,6 +549,30 @@ bot.on('callback_query', async (q) => {
       const taskId = data.slice('delid:'.length);
       await deleteTaskById(chatId, taskId);
       await bot.answerCallbackQuery(q.id, { text: 'Задача удалена' });
+      return;
+    }
+    if (data.startsWith('remind:')) {
+      const mode = data.slice('remind:'.length);
+      if (mode === 'cancel') {
+        pendingAction.delete(chatId);
+        pendingDraft.delete(chatId);
+        await bot.answerCallbackQuery(q.id, { text: 'Отменено' });
+        await sendMainMenu(chatId, 'Добавление задачи отменено.');
+        return;
+      }
+      if (mode === 'custom') {
+        pendingAction.set(chatId, 'add_remind_custom');
+        await bot.answerCallbackQuery(q.id, { text: 'Введи своё число минут' });
+        await sendMainMenu(chatId, 'Напиши своё число минут, например: 7');
+        return;
+      }
+      const minutes = Number(mode);
+      if (!Number.isFinite(minutes) || minutes < 0) {
+        await bot.answerCallbackQuery(q.id, { text: 'Некорректное значение' });
+        return;
+      }
+      await finalizeDraft(chatId, minutes);
+      await bot.answerCallbackQuery(q.id, { text: `Ок, за ${minutes} мин` });
       return;
     }
     await bot.answerCallbackQuery(q.id);
