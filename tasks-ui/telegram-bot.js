@@ -162,6 +162,7 @@ function remindInlineKeyboard() {
 }
 
 async function saveTask(chatId, title, eventTime, remindBeforeMinutes) {
+  const allTasks = await loadTasks();
   const now = new Date();
   const task = {
     id: generateId(),
@@ -212,7 +213,6 @@ async function createTaskFromInput(chatId, rawText) {
     );
     return;
   }
-  const allTasks = await loadTasks();
   const now = new Date();
   let remindBeforeMinutes = DEFAULT_REMIND_BEFORE_MINUTES;
   let preparedText = text;
