@@ -34,6 +34,7 @@ try {
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TASKS_API_URL = process.env.TASKS_API_URL || 'http://localhost:3080/api/tasks';
+const BOT_TZ = process.env.APP_TZ || process.env.TZ || 'Europe/Moscow';
 const DEFAULT_REMIND_BEFORE_MINUTES = Number.isFinite(Number(process.env.DEFAULT_REMIND_BEFORE_MINUTES))
   ? Math.max(0, Number(process.env.DEFAULT_REMIND_BEFORE_MINUTES))
   : 0;
@@ -61,6 +62,7 @@ function formatDateTime(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString('ru-RU', {
+    timeZone: BOT_TZ,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -112,6 +114,7 @@ const HELP_TEXT =
   '/add ... /m15 — напомнить за 15 минут до события (по умолчанию /m0)\n' +
   '/list — показать список ближайших задач\n' +
   '/delete N — удалить задачу под номером N из списка /list\n\n' +
+  '/time — показать текущее время бота (чтобы сверить часовой пояс)\n\n' +
   'Примеры:\n' +
   '/add 25.03.2026 10:00 созвон с клиентом\n' +
   '/add 19.30 отправить отчёт\n' +
@@ -127,6 +130,15 @@ bot.onText(/^\/start$/, async (msg) => {
 bot.onText(/^\/help$/, async (msg) => {
   const chatId = msg.chat.id;
   await bot.sendMessage(chatId, HELP_TEXT);
+});
+
+bot.onText(/^\/time$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const now = new Date();
+  await bot.sendMessage(
+    chatId,
+    `🕒 Время бота: ${now.toLocaleString('ru-RU', { timeZone: BOT_TZ })}\nTZ: ${BOT_TZ}`
+  );
 });
 
 function isSameDateParts(d, year, month, day, hour, minute) {

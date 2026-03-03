@@ -80,6 +80,7 @@ npm start
 | Переменная | Описание |
 |------------|----------|
 | `PORT` | Порт веб-сервера (по умолчанию 3080) |
+| `TZ` | Часовой пояс процессов (`Europe/Moscow` для МСК) |
 | `OPENCLAW_GATEWAY_URL` | URL OpenClaw Gateway |
 | `OPENCLAW_HOOK_TOKEN` | Токен webhook OpenClaw |
 | `OPENCLAW_TELEGRAM_TO` | Telegram Chat ID получателя (несколько через запятую) |
@@ -164,6 +165,7 @@ pm2 logs assistent-web --lines 50
 ## Команды Telegram-бота
 
 - `/start`, `/help` — подсказка
+- `/time` — показать текущее время бота и его timezone
 - `/list` — список ваших задач
 - `/delete N` — удалить задачу по номеру из `/list`
 - `/add` поддерживает 3 формата:

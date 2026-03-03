@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 
 // Загружаем .env из этой папки, но не храним секреты в git.
 dotenv.config({ path: path.join(__dirname, '.env'), override: true });
+const APP_TZ = process.env.TZ || process.env.APP_TZ || 'Europe/Moscow';
 
 module.exports = {
   apps: [
@@ -13,6 +14,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       env: {
+        TZ: APP_TZ,
         PORT: process.env.PORT || '3080',
         OPENCLAW_GATEWAY_URL: process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789',
         OPENCLAW_HOOK_TOKEN: process.env.OPENCLAW_HOOK_TOKEN || '',
@@ -28,8 +30,10 @@ module.exports = {
       autorestart: true,
       watch: false,
       env: {
+        TZ: APP_TZ,
         TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
         TASKS_API_URL: process.env.TASKS_API_URL || 'http://localhost:3080/api/tasks',
+        APP_TZ,
       },
     },
   ],
