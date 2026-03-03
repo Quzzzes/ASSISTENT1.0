@@ -219,6 +219,14 @@ async function sendTaskList(chatId) {
       lines.join('\n') +
       '\n\nЧтобы удалить: /delete N (номер из списка).'
   );
+
+  // Inline-кнопки: удаление в 1 клик по конкретной задаче
+  const inlineKeyboard = sorted.slice(0, 10).map((t, idx) => ([
+    { text: `🗑 Удалить #${idx + 1}`, callback_data: `delid:${t.id}` },
+  ]));
+  await bot.sendMessage(chatId, 'Быстрое удаление:', {
+    reply_markup: { inline_keyboard: inlineKeyboard },
+  });
 }
 
 async function deleteTaskByNumber(chatId, n) {
@@ -245,6 +253,26 @@ async function deleteTaskByNumber(chatId, n) {
   await sendMainMenu(
     chatId,
     `Удалил задачу №${n}:\n${formatDateTime(target.dateTime)} — ${target.title}`
+  );
+}
+
+async function deleteTaskById(chatId, taskId) {
+  const allTasks = await loadTasks();
+  const myTasks = filterTasksForChat(allTasks, chatId);
+  if (!myTasks.length) {
+    await sendMainMenu(chatId, 'У тебя нет задач для удаления.');
+    return;
+  }
+  const target = myTasks.find((t) => t.id === taskId);
+  if (!target) {
+    await sendMainMenu(chatId, 'Эта задача уже удалена или недоступна.');
+    return;
+  }
+  const remaining = allTasks.filter((t) => t.id !== taskId);
+  await saveTasks(remaining);
+  await sendMainMenu(
+    chatId,
+    `Удалил задачу:\n${formatDateTime(target.dateTime)} — ${target.title}`
   );
 }
 
@@ -433,6 +461,24 @@ bot.on('message', async (msg) => {
   } catch (err) {
     log('message handler error', err);
     await sendMainMenu(chatId, 'Не получилось обработать сообщение. Попробуй ещё раз.');
+  }
+});
+
+bot.on('callback_query', async (q) => {
+  const chatId = q.message?.chat?.id;
+  const data = q.data || '';
+  if (!chatId) return;
+  try {
+    if (data.startsWith('delid:')) {
+      const taskId = data.slice('delid:'.length);
+      await deleteTaskById(chatId, taskId);
+      await bot.answerCallbackQuery(q.id, { text: 'Задача удалена' });
+      return;
+    }
+    await bot.answerCallbackQuery(q.id);
+  } catch (err) {
+    log('callback error', err);
+    await bot.answerCallbackQuery(q.id, { text: 'Ошибка удаления', show_alert: false }).catch(() => {});
   }
 });
 
