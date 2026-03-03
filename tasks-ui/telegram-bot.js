@@ -4,8 +4,12 @@
  * Команды:
  *  /start  — приветствие и помощь
  *  /help   — помощь
- *  /add Текст задачи
- *          → создаёт задачу на «сейчас + 1 час», напомнить за 15 мин, один раз
+ *  /add ...   — создать задачу
+ *               Поддерживаются форматы:
+ *               1) /add ДД.MM.ГГГГ ЧЧ:ММ текст
+ *               2) /add ДД.MM.ГГГГ ЧЧ.ММ текст
+ *               3) /add ЧЧ:ММ текст              (сегодня/завтра)
+ *               4) /add текст                    (через 1 час)
  *  /list   — список ближайших задач для этого чата
  *  /delete N
  *          → удалить N‑ю ближайшую задачу (по номеру из /list)
@@ -99,11 +103,15 @@ function filterTasksForChat(tasks, chatId) {
 const HELP_TEXT =
   'Привет! Я бот-напоминалка.\n\n' +
   'Команды:\n' +
-  '/add ДД.MM.ГГГГ ЧЧ:ММ текст — создать задачу на указанную дату/время (напомню за 15 минут)\n' +
+  '/add ДД.MM.ГГГГ ЧЧ:ММ текст — задача на указанную дату и время\n' +
+  '/add ЧЧ:ММ текст — задача на сегодня/завтра в указанное время\n' +
+  '/add текст — задача через 1 час\n' +
   '/list — показать список ближайших задач\n' +
   '/delete N — удалить задачу под номером N из списка /list\n\n' +
-  'Пример:\n' +
-  '/add 25.03.2026 10:00 созвон с клиентом';
+  'Примеры:\n' +
+  '/add 25.03.2026 10:00 созвон с клиентом\n' +
+  '/add 19.30 отправить отчёт\n' +
+  '/add 09:15 проверить почту';
 
 bot.onText(/^\/start$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -116,7 +124,65 @@ bot.onText(/^\/help$/, async (msg) => {
   await bot.sendMessage(chatId, HELP_TEXT);
 });
 
-// /add ДД.MM.ГГГГ ЧЧ:ММ текст  ИЛИ  /add текст
+function isSameDateParts(d, year, month, day, hour, minute) {
+  return (
+    d.getFullYear() === year &&
+    d.getMonth() === month &&
+    d.getDate() === day &&
+    d.getHours() === hour &&
+    d.getMinutes() === minute
+  );
+}
+
+function parseAddInput(input, now) {
+  // 1) DD.MM.YYYY HH:MM text  или  DD.MM.YYYY HH.MM text
+  let m = input.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2})[:.](\d{2})\s+(.+)$/);
+  if (m) {
+    const day = Number(m[1]);
+    const month = Number(m[2]) - 1;
+    const year = Number(m[3]);
+    const hour = Number(m[4]);
+    const minute = Number(m[5]);
+    const title = m[6].trim();
+    const dt = new Date(year, month, day, hour, minute);
+    if (
+      Number.isNaN(dt.getTime()) ||
+      !isSameDateParts(dt, year, month, day, hour, minute)
+    ) {
+      throw new Error('Неверная дата/время. Пример: /add 25.03.2026 10:00 созвон');
+    }
+    if (dt <= now) {
+      throw new Error('Дата/время уже в прошлом. Укажи время в будущем.');
+    }
+    return { eventTime: dt, title };
+  }
+
+  // 2) HH:MM text  или HH.MM text  — на сегодня/завтра
+  m = input.match(/^(\d{1,2})[:.](\d{2})\s+(.+)$/);
+  if (m) {
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    const title = m[3].trim();
+    if (hour > 23 || minute > 59) {
+      throw new Error('Неверное время. Пример: /add 19:30 созвон');
+    }
+    const dt = new Date(now);
+    dt.setSeconds(0, 0);
+    dt.setHours(hour, minute, 0, 0);
+    if (dt <= now) {
+      dt.setDate(dt.getDate() + 1);
+    }
+    return { eventTime: dt, title };
+  }
+
+  // 3) /add текст — через 1 час
+  return {
+    eventTime: new Date(now.getTime() + 60 * 60 * 1000),
+    title: input.trim(),
+  };
+}
+
+// /add (гибкий формат)
 bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   const chatId = msg.chat.id;
   const text = (match[1] || '').trim();
@@ -125,6 +191,9 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
       chatId,
       'Использование:\n' +
         '/add ДД.MM.ГГГГ ЧЧ:ММ текст\n\n' +
+        'Также можно:\n' +
+        '/add ЧЧ:ММ текст\n' +
+        '/add текст\n\n' +
         'Пример:\n' +
         '/add 25.03.2026 10:00 созвон с клиентом'
     );
@@ -134,34 +203,7 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
   try {
     const allTasks = await loadTasks();
     const now = new Date();
-
-    let title = text;
-    let eventTime;
-
-    // Пытаемся разобрать формат: 25.03.2026 10:00 текст
-    const m = text.match(
-      /^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})\s+(.+)$/
-    );
-    if (m) {
-      const [_, dd, mm, yyyy, hh, min, rest] = m;
-      const year = Number(yyyy);
-      const month = Number(mm) - 1;
-      const day = Number(dd);
-      const hour = Number(hh);
-      const minute = Number(min);
-      const dt = new Date(year, month, day, hour, minute);
-      if (Number.isNaN(dt.getTime())) {
-        throw new Error('Не удалось разобрать дату/время. Проверь формат ДД.MM.ГГГГ ЧЧ:ММ.');
-      }
-      if (dt <= now) {
-        throw new Error('Дата/время уже в прошлом. Укажи время в будущем.');
-      }
-      eventTime = dt;
-      title = rest.trim();
-    } else {
-      // Старый формат: /add текст — ставим через час от текущего времени
-      eventTime = new Date(now.getTime() + 60 * 60 * 1000);
-    }
+    const { eventTime, title } = parseAddInput(text, now);
 
     const task = {
       id: generateId(),
@@ -180,13 +222,16 @@ bot.onText(/^\/add(?:\s+(.+))?$/s, async (msg, match) => {
       chatId,
       'Задача создана ✅\n' +
         `Когда: ${formatDateTime(task.dateTime)}\n` +
-        'Напомню за 15 минут до события.'
+        'Напомню за 15 минут до события.\n' +
+        'Проверить список: /list'
     );
   } catch (err) {
     log('add error', err);
     await bot.sendMessage(
       chatId,
-      'Не получилось сохранить задачу. Попробуйте позже.\n' + String(err.message || err)
+      'Не получилось сохранить задачу.\n' +
+      String(err.message || err) +
+      '\n\nФормат:\n/add ДД.MM.ГГГГ ЧЧ:ММ текст'
     );
   }
 });
