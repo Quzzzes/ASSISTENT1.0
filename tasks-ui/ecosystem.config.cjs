@@ -17,6 +17,7 @@ module.exports = {
         OPENCLAW_GATEWAY_URL: process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789',
         OPENCLAW_HOOK_TOKEN: process.env.OPENCLAW_HOOK_TOKEN || '',
         OPENCLAW_TELEGRAM_TO: process.env.OPENCLAW_TELEGRAM_TO || '',
+        TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
         CHECK_INTERVAL_MS: process.env.CHECK_INTERVAL_MS || '60000',
       },
     },
